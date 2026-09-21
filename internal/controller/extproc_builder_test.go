@@ -245,7 +245,7 @@ func TestExtProcContainerHash_Drift(t *testing.T) {
 }
 
 // TestExtProcContainerHash_ExcludesConfigRoutingArgs ensures the secret-
-// presence-driven -configPath / -configBundlePath args are NOT part of the hash
+// presence-driven -configBundlePath args are NOT part of the hash
 // (they are added by the webhook after buildExtProcContainer returns). The base
 // container's Args must contain neither flag, so secret-existence transitions
 // do not spuriously trigger rollouts.
@@ -257,7 +257,6 @@ func TestExtProcContainerHash_ExcludesConfigRoutingArgs(t *testing.T) {
 
 	container := b.buildExtProcContainer(input)
 	for _, a := range container.Args {
-		require.NotEqual(t, "-configPath", a)
 		require.NotEqual(t, "-configBundlePath", a)
 	}
 	require.Equal(t, baseHash, b.extProcContainerHash(input),
