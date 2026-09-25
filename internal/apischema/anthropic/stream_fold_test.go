@@ -133,6 +133,14 @@ func TestMessagesResponseFromStream_boundaries(t *testing.T) {
 				},
 			}},
 		},
+		{
+			name: "delta for a negative index is ignored",
+			chunks: []*MessagesStreamChunk{{
+				ContentBlockDelta: &MessagesStreamChunkContentBlockDelta{
+					Index: -1, Delta: ContentBlockDelta{Text: "orphan"},
+				},
+			}},
+		},
 	}
 
 	for _, tc := range tests {
