@@ -440,13 +440,13 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(_ map[string
 		}
 		if bedrockResp.Usage.CacheWriteInputTokens != nil {
 			tokenUsage.SetCacheCreationInputTokens(uint32(*bedrockResp.Usage.CacheWriteInputTokens)) //nolint:gosec
-			openAIResp.Usage.PromptTokensDetails.CacheCreationTokens = int(*bedrockResp.Usage.CacheWriteInputTokens)
+			openAIResp.Usage.PromptTokensDetails.CacheWriteTokens = int(*bedrockResp.Usage.CacheWriteInputTokens)
 		}
 	}
 
 	// AWS Bedrock Converse API does not support N(multiple choices) > 0, so there could be only one choice.
 	choice := openai.ChatCompletionResponseChoice{
-		Index: (int64)(0),
+		Index: int64(0),
 		Message: openai.ChatCompletionResponseChoiceMessage{
 			Role: bedrockResp.Output.Message.Role,
 		},
@@ -467,10 +467,27 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) ResponseBody(_ map[string
 				choice.Message.Content = output.Text
 			}
 		case output.ReasoningContent != nil:
-			choice.Message.ReasoningContent = &openai.ReasoningContentUnion{
-				Value: &openai.ReasoningContent{
-					ReasoningContent: output.ReasoningContent,
-				},
+			// Reasoning text goes to the plain-string reasoning_content; signature and
+			// redacted content go to thinking_blocks (they cannot be represented in a
+			// plain string). This mirrors the streaming path and the Gemini helper.
+			if rt := output.ReasoningContent.ReasoningText; rt != nil {
+				// Only set reasoning_content when there is actual text; a
+				// signature-only block must not emit an empty string.
+				if rt.Text != "" {
+					choice.Message.ReasoningContent = &openai.ReasoningContentUnion{Value: rt.Text}
+				}
+				// Surface the block (text and/or signature) so a signature still
+				// round-trips even without accompanying text.
+				if rt.Text != "" || rt.Signature != "" {
+					choice.Message.ThinkingBlocks = append(choice.Message.ThinkingBlocks, openai.ThinkingBlock{
+						Type: "thinking", Thinking: rt.Text, Signature: rt.Signature,
+					})
+				}
+			}
+			if rc := output.ReasoningContent.RedactedContent; rc != nil {
+				choice.Message.ThinkingBlocks = append(choice.Message.ThinkingBlocks, openai.ThinkingBlock{
+					Type: "redacted_thinking", Data: base64.StdEncoding.EncodeToString(rc),
+				})
 			}
 		}
 	}
@@ -561,7 +578,7 @@ func (o *openAIToAWSBedrockTranslatorV1ChatCompletion) convertEvent(event *awsbe
 			chunk.Usage.PromptTokensDetails.CachedTokens = int(*event.Usage.CacheReadInputTokens)
 		}
 		if event.Usage.CacheWriteInputTokens != nil {
-			chunk.Usage.PromptTokensDetails.CacheCreationTokens = int(*event.Usage.CacheWriteInputTokens)
+			chunk.Usage.PromptTokensDetails.CacheWriteTokens = int(*event.Usage.CacheWriteInputTokens)
 		}
 	// messageStart event.
 	case awsbedrock.ConverseStreamEventTypeMessageStart.String():
